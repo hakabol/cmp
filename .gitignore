@@ -1,1 +1,2 @@
-model/scraper/target
+**/target/
+**/Cargo.lock
