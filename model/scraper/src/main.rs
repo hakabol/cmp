@@ -1,11 +1,10 @@
-use std::{ffi::OsStr, fs, path::PathBuf, vec};
+use std::{env, ffi::OsStr, fs, path::PathBuf, vec};
 
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 const NEEDED_EXT: &[&str] = &[
     "rs",
     "toml",
-    "lock",
     "json",
     "yaml",
     "yml",
@@ -19,35 +18,52 @@ const NEEDED_EXT: &[&str] = &[
     "ipynb"
 ];
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Chunk {
-    kind: String,
-    name: String,
     code: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct File {
     path: String,
     chunks: Vec<Chunk>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Repo {
     name: String,
     files: Vec<File>,
 }
 
 fn main() {
-    let path = clone_url("https://github.com/BurntSushi/ripgrep").unwrap();
+    let args: Vec<String> = env::args().collect();
+    let repo = &args[1];
+    let name = repo.split("/").last().unwrap();
+    let path = clone_url(repo).unwrap();
 
     let files = walk_dirs(path);
 
-    for file in files{
-        println!("{}", file.display());
-    }
+    println!("reading repo");
 
+    let repo = to_repo(files, name.to_string());
+
+    println!("repo ready and cloned");
+
+    let text = fs::read_to_string("data.json").unwrap();
+
+    let mut repos: Vec<Repo> = serde_json::from_str(&text).unwrap();
+    //let mut repos: Vec<Repo> = vec![];
+    repos.push(repo);
+
+    let json = serde_json::to_string_pretty(&repos).unwrap();
+
+    println!("json ready");
+
+    fs::write("data.json", json).unwrap();
     fs::remove_dir_all("temp").unwrap();
+
+    println!("done");
+
 }
 
 fn clone_url(url: &str) -> anyhow::Result<PathBuf>{
@@ -88,4 +104,33 @@ fn walk_dirs(path: PathBuf) -> Vec<PathBuf>{
     }
 
     files
+}
+
+fn reader(path: PathBuf) -> Vec<Chunk>{
+    let mut paras: Vec<Chunk> = vec![];
+
+    let text = fs::read_to_string(path).unwrap();
+    let paras_it = text.split("\n\n");
+
+    for para in paras_it{
+        paras.push(Chunk { code: para.to_string() });
+    }
+
+    paras
+}
+
+fn to_repo(paths: Vec<PathBuf>, repo_name: String) -> Repo{
+    let mut files: Vec<File> = vec![];
+
+    for path in paths{
+        let s = path.to_string_lossy();
+        let name = &s[5..];
+
+        let chunks = reader(path.clone());
+
+        files.push(File { path: name.to_string(), chunks })
+
+    }
+
+    return Repo {name: repo_name, files: files}
 }
